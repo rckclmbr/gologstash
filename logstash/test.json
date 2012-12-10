@@ -1,0 +1,4 @@
+{
+	"pattern":  "%{WORD:something} %{WORD:world}",
+	"pattern_files": ["patterns"]
+}
