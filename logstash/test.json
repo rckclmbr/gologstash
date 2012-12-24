@@ -1,4 +1,31 @@
 {
-	"pattern":  "%{WORD:something} %{WORD:world}",
-	"pattern_files": ["patterns"]
+    "inputs": [
+        { "type": "zeromq",
+          "conn_string": "tcp://127.0.0.1:6000"
+        },
+        { "type": "zeromq",
+          "conn_string": "tcp://127.0.0.1:5000"
+        }
+    ],
+    "filters": [
+        { "type": "grok",
+          "pattern":  "%{WORD:something} %{WORD:world}",
+          "pattern_files": ["patterns"]
+        },
+        { "type": "grok",
+          "pattern":  "%{WORD:something2} %{WORD:world2}",
+          "pattern_files": ["patterns"]
+        },
+        { "type": "grok",
+          "pattern":  "%{WORD:something3} %{WORD:world3}",
+          "pattern_files": ["patterns"]
+        }
+    ],
+    "outputs": [
+        { "type": "debug"
+        },
+        { "type": "elasticsearch",
+          "conn_string": "tcp://127.0.0.1:5000"
+        }
+    ]
 }
