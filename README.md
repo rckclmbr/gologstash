@@ -1,6 +1,7 @@
 gologstash
 ============
-__Info__ See [http://github.com/rckclmbr/logstash](github) for the latest source.
+See [http://github.com/rckclmbr/logstash](github) for the latest source.
+
 __Author__ Josh Braegger <rckclmbr@gmail.com>
 
 About
