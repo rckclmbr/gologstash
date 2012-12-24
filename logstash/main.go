@@ -2,6 +2,8 @@ package main
 
 
 import (
+	"log"
+	"os/signal"
 	"fmt"
 	"encoding/json"
 	"time"
@@ -19,31 +21,80 @@ type Message struct {
     time int64
 }
 
-func ReadConfig(filename string) (interface{}) {
-	file, e := ioutil.ReadFile(filename)
-    if e != nil {
-       fmt.Printf("File error: %v\n", e)
-       os.Exit(1)
-   }
-   var jsontype interface{}
-   e = json.Unmarshal(file, &jsontype)
-   if e != nil {
-      fmt.Printf("Error reading config file '%v': %v\n", filename, e)
-      os.Exit(1)
-  }
-   fmt.Printf("Results: %v\n", jsontype)
-   return jsontype
+type LogstashEvents struct {
+	filters []filters.FilterType
+	inputs []input.InputType
+	outputs []output.OutputType
 }
 
-func Input(output chan *event.Event) {
-		
-	filter := make(chan []byte)
-	
-	zmq := input.NewZeroMQ()
-	go zmq.Receive(filter)
-		
+func readConfig(filename string) (interface{}) {
+	file, e := ioutil.ReadFile(filename)
+    if e != nil {
+        fmt.Printf("File error: %v\n", e)
+        os.Exit(1)
+    }
+    var jsontype interface{}
+   	e = json.Unmarshal(file, &jsontype)
+   	if e != nil {
+    	fmt.Printf("Error reading config file '%v': %v\n", filename, e)
+	    os.Exit(1)
+  	}
+
+   	return jsontype
+}
+
+func (le *LogstashEvents) parseConfig() {
+	args := readConfig("./test.json").(map[string]interface{})
+
+   	filters_config := args["filters"].([]interface{})
+   	inputs_config := args["inputs"].([]interface{})
+   	outputs_config := args["outputs"].([]interface{})
+
+   	for _, filter_config := range filters_config {
+   		f := filter_config.(map[string]interface{})
+
+   		switch f["type"] {
+   		case "grok":
+			g := filters.NewGrokFilter()
+			g.Register(f)
+			le.filters = append(le.filters, g)
+		}
+	}
+
+   	for _, input_config := range inputs_config {
+   		f := input_config.(map[string]interface{})
+
+   		switch f["type"] {
+   		case "zeromq":
+			g := input.NewZeroMQ()
+			g.Register(f)
+			le.inputs = append(le.inputs, g)
+		}
+	}
+
+   	for _, output_config := range outputs_config {
+   		f := output_config.(map[string]interface{})
+   		var g output.OutputType
+   		switch f["type"] {
+   		case "elasticsearch": g = output.NewElasticSearch()
+		case "debug": g = output.NewDebugOutput()
+		}
+		if g != nil {
+			g.Register(f)
+			le.outputs = append(le.outputs, g)
+		}
+	}
+
+	fmt.Printf("%v", le.outputs[0])
+}
+
+func (le *LogstashEvents) Input(output chan *event.Event) {
+	tmpchan := make(chan []byte)		
+	for _, input := range le.inputs {
+		go input.Receive(tmpchan)
+	}
 	for {
-		msg := <- filter
+		msg := <- tmpchan
 	  	evt, err := event.NewFromJSON(msg)
 	  	if err != nil {
 			evt = event.New(msg)
@@ -52,70 +103,66 @@ func Input(output chan *event.Event) {
 	}
 }
 
-func Filter(input chan *event.Event, output chan *event.Event) {
-	
-	
-	args := ReadConfig("./test.json").(map[string]interface{})
-	grok := filters.NewGrokFilter()
-	grok.Register(args)
-	
-	runMany(input, output, func(evt *event.Event) {
-		grok.Filter(evt)
-	}, 20)
-
-}
-
-func runMany2(input chan *event.Event, output chan *event.Event, f func(*event.Event), iterations int) {
-	for {
-		evt := <- input
-		for i:=0; i<iterations; i++ {
-			f(evt)
-		}
-		output <- evt
-	}
-}
-
-func runMany(input chan *event.Event, output chan *event.Event, f func(*event.Event), iterations int) {
+func (le *LogstashEvents) Filter(input chan *event.Event, output chan *event.Event) {
 	start := input
 	end := make(chan *event.Event)		
 		
-	for i:=0; i<iterations; i++ {
-		if i == iterations-1 {
+	for i, f := range le.filters {
+		if i == len(le.filters)-1 {
 			end = output
 		}
-		go func(s chan *event.Event, e chan *event.Event) {
+		go func(s chan *event.Event, e chan *event.Event, f filters.FilterType) {
 			for {
 				evt := <- s
-				f(evt)
+				f.Filter(evt)
 				e <- evt
 			}
-		}(start, end)
+		}(start, end, f)
 		start = end // Start at the last end
 		end = make(chan *event.Event)
+		i += 1
 	}
 }
 
-func Output(out chan *event.Event) {
-	es := output.NewElasticSearch()
-	
-	t0 := time.Now()
-	for i:=0; i<10000; i++ {
-		evt := <- out
-		es.Output(evt)
-	}	
-	t1 := time.Now()
-	fmt.Printf("The call took %v to run.\n", t1.Sub(t0))
+func (le *LogstashEvents) Output(out chan *event.Event) {
 
+	outputs := make([]chan *event.Event, 0)
+	for _, out := range le.outputs {
+		tmp := make(chan *event.Event)
+		outputs = append(outputs, tmp)
+		go func(out output.OutputType, ch chan *event.Event) {
+			for { out.Output(<- ch) }
+		}(out, tmp)
+	}
+
+	for {
+		evt := <- out
+		for _, o := range outputs {
+			o <- evt
+		}
+	}
 }
 
 func main() {
-	fmt.Println("Hello, 世界")
-	
-	ReadConfig("test.json")
+	fmt.Println("Starting logstash")
 		
-	input := make(chan *event.Event)
-	output := make(chan *event.Event)
-	go Input(input)
-	go Filter(input, output)
-	Output(output)
+	inchan := make(chan *event.Event)
+	outchan := make(chan *event.Event)
+
+	le := &LogstashEvents{
+		make([]filters.FilterType, 0), 
+		make([]input.InputType, 0),
+		make([]output.OutputType, 0),
+	}
+	le.parseConfig()
+	go le.Input(inchan)
+	go le.Filter(inchan, outchan)
+	go le.Output(outchan)
+
+	// Wait for SIGINT
+	c := make(chan os.Signal, 1)                                       
+	signal.Notify(c, os.Interrupt)
+	t0 := time.Now()
+    log.Printf("Captured %v, Stopping and exiting.", <- c)
+    log.Printf("Runtime: %v", time.Now().Sub(t0))
 }

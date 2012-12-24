@@ -15,11 +15,16 @@ func NewElasticSearch() (*ElasticSearch) {
 	return &ElasticSearch{1}
 }
 
-func (es *ElasticSearch) Output(evt *event.Event) {
+func (es *ElasticSearch) Register(args map[string]interface{}) (error) {
+	return nil
+}
+
+func (es *ElasticSearch) Output(evt *event.Event) (error) {
 	_, err := evt.ToJSON()
 	if err != nil {
 		log.Printf("Error generating json: %v\n", err)
 	}
 	fmt.Printf(".")
+	return nil
 	//fmt.Println(string(j))
 }
