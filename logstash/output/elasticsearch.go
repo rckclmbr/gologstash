@@ -1,10 +1,11 @@
 package output
 
 import (
-	// "encoding/json"
 	"github.com/rckclmbr/gologstash/logstash/event"
-	"fmt"
 	"log"
+	"github.com/mattbaird/elastigo/core"
+	"time"
+	"fmt"
 )
 
 type ElasticSearch struct {
@@ -24,7 +25,20 @@ func (es *ElasticSearch) Output(evt *event.Event) (error) {
 	if err != nil {
 		log.Printf("Error generating json: %v\n", err)
 	}
-	fmt.Printf(".")
+
+	t := time.Now()
+	index := fmt.Sprintf("logstash-%d.%02d.%02d",
+	    t.Year(),
+	    t.Month(),
+	    t.Day())
+
+	data, err := evt.ToJSON()
+
+	response, err := core.Index(true, index, evt.Type, "", string(data))
+	if err != nil {
+		log.Printf("Error: %+v %v\n", response, err)
+		return err
+	}
 	return nil
 	//fmt.Println(string(j))
 }
