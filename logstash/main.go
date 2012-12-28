@@ -2,6 +2,7 @@ package main
 
 
 import (
+	"flag"
 	"log"
 	"os/signal"
 	"fmt"
@@ -25,7 +26,11 @@ type LogstashEvents struct {
 	filters []filters.FilterType
 	inputs []input.InputType
 	outputs []output.OutputType
+
+	configFile string
 }
+
+var configFile string;
 
 func readConfig(filename string) (interface{}) {
 	file, e := ioutil.ReadFile(filename)
@@ -43,8 +48,17 @@ func readConfig(filename string) (interface{}) {
    	return jsontype
 }
 
+func init() {
+	const (
+		defaultString = "test.json"
+		usage         = "Path to the config file"
+	)
+	flag.StringVar(&configFile, "config_file", defaultString, usage)
+	flag.StringVar(&configFile, "c", defaultString, usage+" (shorthand)")
+}
+
 func (le *LogstashEvents) parseConfig() {
-	args := readConfig("./test.json").(map[string]interface{})
+	args := readConfig(le.configFile).(map[string]interface{})
 
    	filters_config := args["filters"].([]interface{})
    	inputs_config := args["inputs"].([]interface{})
@@ -149,11 +163,15 @@ func main() {
 	inchan := make(chan *event.Event)
 	outchan := make(chan *event.Event)
 
+	flag.Parse()
+
 	le := &LogstashEvents{
 		make([]filters.FilterType, 0), 
 		make([]input.InputType, 0),
 		make([]output.OutputType, 0),
+		configFile,
 	}
+
 	le.parseConfig()
 	go le.Input(inchan)
 	go le.Filter(inchan, outchan)
