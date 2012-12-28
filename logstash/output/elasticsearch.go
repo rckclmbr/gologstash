@@ -3,7 +3,7 @@ package output
 import (
 	"github.com/rckclmbr/gologstash/logstash/event"
 	"log"
-	"github.com/mattbaird/elastigo/core"
+	"github.com/rckclmbr/elastigo/core"
 	"time"
 	"fmt"
 )
